@@ -2,6 +2,7 @@ package com.chubb.claims.claim;
 
 import com.chubb.claims.common.DomainException;
 import com.chubb.claims.workflow.InformationRequest;
+import com.chubb.claims.workflow.InformationRequestNotFoundException;
 import com.chubb.claims.workflow.TransitionPolicy;
 import jakarta.persistence.*;
 import java.math.BigDecimal;
@@ -100,8 +101,7 @@ public class Claim {
   }
 
   public void checkVersion(long expected) {
-    if (version == null || version != expected)
-      throw new DomainException("Claim has changed; retrieve its latest version and retry");
+    if (version == null || version != expected) throw new StaleClaimVersionException();
   }
 
   public void assign(String officerId, String officerName, Instant now) {
@@ -123,13 +123,12 @@ public class Claim {
   }
 
   public void provideInformation(UUID requestId, String response, Instant now) {
-    TransitionPolicy.validate(status, ClaimStatus.UNDER_REVIEW);
     InformationRequest request =
         informationRequests.stream()
             .filter(r -> r.getId().equals(requestId))
             .findFirst()
-            .orElseThrow(
-                () -> new DomainException("Information request does not belong to this claim"));
+            .orElseThrow(InformationRequestNotFoundException::new);
+    TransitionPolicy.validate(status, ClaimStatus.UNDER_REVIEW);
     request.provide(response, now);
     moveTo(ClaimStatus.UNDER_REVIEW, now);
   }

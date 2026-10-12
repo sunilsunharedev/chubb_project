@@ -1,6 +1,5 @@
 package com.chubb.claims.claim;
 
-import com.chubb.claims.common.NotFoundException;
 import com.chubb.claims.event.EventRecorder;
 import com.chubb.claims.workflow.ClaimHistoryRepository;
 import java.time.Clock;
@@ -106,7 +105,7 @@ public class ClaimService {
   }
 
   private Claim find(UUID id) {
-    return claims.findById(id).orElseThrow(() -> new NotFoundException("Claim not found"));
+    return claims.findById(id).orElseThrow(ClaimNotFoundException::new);
   }
 
   public record HistoryView(

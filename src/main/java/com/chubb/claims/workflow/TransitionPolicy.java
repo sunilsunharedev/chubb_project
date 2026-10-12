@@ -3,7 +3,6 @@ package com.chubb.claims.workflow;
 import static com.chubb.claims.claim.ClaimStatus.*;
 
 import com.chubb.claims.claim.ClaimStatus;
-import com.chubb.claims.common.DomainException;
 import java.util.Map;
 import java.util.Set;
 
@@ -25,7 +24,8 @@ public final class TransitionPolicy {
 
   public static void validate(ClaimStatus from, ClaimStatus to) {
     if (!ALLOWED.getOrDefault(from, Set.of()).contains(to)) {
-      throw new DomainException("Transition from " + from + " to " + to + " is not allowed");
+      throw new InvalidClaimStateException(
+          "Transition from " + from + " to " + to + " is not allowed");
     }
   }
 }

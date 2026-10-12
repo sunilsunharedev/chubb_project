@@ -41,7 +41,8 @@ public class InformationRequest {
   }
 
   public void provide(String answer, Instant now) {
-    if (status != Status.OPEN) throw new DomainException("Information request is already answered");
+    if (status != Status.OPEN)
+      throw new InvalidClaimStateException("Information request is already answered");
     if (answer == null || answer.isBlank())
       throw new DomainException("Information response is required");
     response = answer;

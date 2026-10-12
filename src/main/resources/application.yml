@@ -1,6 +1,9 @@
 spring:
   application:
     name: apac-claims
+  jackson:
+    deserialization:
+      accept-float-as-int: false
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/claims}
     username: ${DB_USER:claims}
@@ -31,6 +34,8 @@ management:
     health:
       show-details: never
 logging:
+  level:
+    org.hibernate.engine.jdbc.spi.SqlExceptionHelper: 'OFF'
   pattern:
     level: "%5p [correlation=%X{correlationId}]"
 claims:
@@ -38,3 +43,8 @@ claims:
     enabled: ${EVENTS_ENABLED:true}
     topic: ${CLAIMS_TOPIC:claims.lifecycle.v1}
     poll-delay-ms: 5000
+server:
+  error:
+    include-message: never
+    include-binding-errors: never
+    include-stacktrace: never

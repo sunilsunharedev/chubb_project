@@ -66,7 +66,7 @@ class ClaimTest {
     c.requestInformation("Provide repair estimate", now);
     assertThat(c.getStatus()).isEqualTo(ClaimStatus.INFORMATION_REQUIRED);
     assertThatThrownBy(() -> c.provideInformation(UUID.randomUUID(), "Response", now))
-        .isInstanceOf(DomainException.class);
+        .isInstanceOf(InformationRequestNotFoundException.class);
     var request = c.getInformationRequests().get(0);
     c.provideInformation(request.getId(), "Repair estimate supplied", now);
     assertThat(request.getStatus()).isEqualTo(InformationRequest.Status.PROVIDED);

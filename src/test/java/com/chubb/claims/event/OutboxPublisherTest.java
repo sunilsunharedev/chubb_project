@@ -6,6 +6,8 @@ import static org.mockito.Mockito.*;
 import java.time.*;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.Test;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
@@ -48,5 +50,52 @@ class OutboxPublisherTest {
     assertThat(event.getPublishedAt()).isNull();
     assertThat(event.getAttempts()).isEqualTo(1);
     verify(kafka, never()).send("claims.lifecycle.v1", second.getClaimId().toString(), "{}");
+  }
+
+  @Test
+  void sendTimeoutKeepsPendingThenSuccessfulRetryMarksPublished() throws Exception {
+    var event = pending();
+    when(repository.findTop20ByPublishedAtIsNullOrderByOccurredAtAsc()).thenReturn(List.of(event));
+    CompletableFuture<SendResult<String, String>> timeout = mock(CompletableFuture.class);
+    when(timeout.get(15, TimeUnit.SECONDS))
+        .thenThrow(new TimeoutException("private broker details"));
+    when(kafka.send("claims.lifecycle.v1", event.getClaimId().toString(), "{}"))
+        .thenReturn(timeout);
+    publisher.publishPending();
+    assertThat(event.getPublishedAt()).isNull();
+    assertThat(event.getAttempts()).isEqualTo(1);
+    when(kafka.send("claims.lifecycle.v1", event.getClaimId().toString(), "{}"))
+        .thenReturn(CompletableFuture.completedFuture(mock(SendResult.class)));
+    publisher.publishPending();
+    assertThat(event.getPublishedAt()).isEqualTo(now);
+    assertThat(event.getAttempts()).isEqualTo(2);
+  }
+
+  @Test
+  void synchronousSendFailureDoesNotMarkPublished() {
+    var event = pending();
+    when(repository.findTop20ByPublishedAtIsNullOrderByOccurredAtAsc()).thenReturn(List.of(event));
+    when(kafka.send("claims.lifecycle.v1", event.getClaimId().toString(), "{}"))
+        .thenThrow(new org.apache.kafka.common.errors.TimeoutException("private broker address"));
+    publisher.publishPending();
+    assertThat(event.getPublishedAt()).isNull();
+    assertThat(event.getAttempts()).isEqualTo(1);
+  }
+
+  @Test
+  void interruptedPublicationPreservesInterruptAndPendingRecord() throws Exception {
+    var event = pending();
+    when(repository.findTop20ByPublishedAtIsNullOrderByOccurredAtAsc()).thenReturn(List.of(event));
+    CompletableFuture<SendResult<String, String>> future = mock(CompletableFuture.class);
+    when(future.get(15, TimeUnit.SECONDS)).thenThrow(new InterruptedException());
+    when(kafka.send("claims.lifecycle.v1", event.getClaimId().toString(), "{}")).thenReturn(future);
+    try {
+      publisher.publishPending();
+      assertThat(Thread.currentThread().isInterrupted()).isTrue();
+      assertThat(event.getPublishedAt()).isNull();
+      assertThat(event.getAttempts()).isEqualTo(1);
+    } finally {
+      Thread.interrupted();
+    }
   }
 }

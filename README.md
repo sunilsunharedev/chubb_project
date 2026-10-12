@@ -13,7 +13,7 @@ A modular Java backend assessment for **Chubb APAC**.
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white)
 
 ![Local build](https://img.shields.io/badge/Local_Java_17_build-passed-2EA44F?style=flat-square)
-![Local tests](https://img.shields.io/badge/Local_tests-23_passed-2EA44F?style=flat-square)
+![Local tests](https://img.shields.io/badge/Local_tests-98_passed-2EA44F?style=flat-square)
 ![PostgreSQL test](https://img.shields.io/badge/PostgreSQL_test-1_skipped-D29922?style=flat-square)
 
 [Quick start](#quick-start) · [Build & test](#prerequisites-and-build) · [API guide](#api-usage) · [Validation](#validation-record) · [Architecture](ARCHITECTURE.md) · [AI journal](AI_WORKING_JOURNAL.md)
@@ -246,6 +246,30 @@ Commands return **200** updated detail; malformed/invalid input **400**, missing
 
 </details>
 
+## Error handling & failure behavior
+
+All Spring MVC API failures use the existing JSON envelope: `timestamp`, `status`, `code`, `message`, `correlationId`, and `fieldErrors`. Error responses explicitly use JSON, including a 406 caused by an unacceptable response format. Rejected values, exception class names, SQL and broker details are not returned.
+
+| Status | Code | Meaning |
+| :--- | :--- | :--- |
+| **400** | `VALIDATION_ERROR` | Missing/blank/oversized fields, negative amounts, decimal precision or pagination validation |
+| **400** | `INVALID_REQUEST` | Malformed JSON, missing body/required query parameter, invalid enum/date/number/UUID |
+| **404** | `NOT_FOUND` | Claim or API resource absent; existing claim error code retained |
+| **404** | `INFORMATION_REQUEST_NOT_FOUND` | Request absent or not owned by this claim |
+| **409** | `CLAIM_CONFLICT` | Invalid lifecycle, repeated assignment/response or terminal mutation; existing code retained |
+| **409** | `STALE_CLAIM_VERSION` | Stale expectedVersion or JPA/Spring optimistic-lock failure |
+| **409** | `DUPLICATE_RESOURCE` | Duplicate key/unique constraint (SQLSTATE 23505), without constraint details |
+| **405 / 415 / 406** | `METHOD_NOT_ALLOWED` / `UNSUPPORTED_MEDIA_TYPE` / `NOT_ACCEPTABLE` | Unsupported method/request format/response format |
+| **500** | `INTERNAL_ERROR` | Unexpected repository, transaction, non-unique integrity or other technical failure |
+
+Unexpected 500 responses say: **“An internal error occurred while processing the request.”** Handled client errors log code/status/correlation ID. Technical failures log complete stack frames, exception types and cause/suppressed chains with correlation ID; exception messages are redacted because driver messages can contain personal values or SQL. Raw Hibernate SQL-error logging is disabled to avoid bypassing this safeguard.
+
+Use the latest returned `version` as the next command's `expectedVersion`; on stale conflict retrieve the claim and reassess the operation before retrying. Fractional versions are rejected rather than truncated. Date validation uses the same UTC clock as domain checks. Missing information requests take precedence over lifecycle validation; a known already-answered request is a business conflict.
+
+Kafka publication stays asynchronous: acknowledgement failure, timeout or interruption leaves the outbox event pending, increments attempts, and stops that batch. A subsequent successful attempt marks it published. Already-committed REST claim changes remain committed; the API does not return 503 solely for a broker outage. Database failure while recording the claim/history/outbox still rolls the business transaction back. The existing single-instance, fixed-delay, at-least-once limitations remain unchanged.
+
+The standardized envelope applies to Spring MVC handling. Proxy/container rejection, a disconnected client, or an error before the MVC/filter chain may not permit the same JSON body. No idempotency key or automatic replay of business commands is introduced; state/version conflicts reject repeated commands.
+
 ## Business assumptions
 
 <details>
@@ -282,7 +306,7 @@ This is a local assessment with no authentication; production needs OAuth2/OIDC/
 | Check | Result | Evidence / scope |
 | :--- | :---: | :--- |
 | Clean build & executable JAR | ✅ Passed | Java 17 compilation, tests and packaging |
-| Default test suite | ✅ **23 passed** | Domain, API, reporting, rollback and concurrency |
+| Default test suite | ✅ **98 passed, 1 skipped** | 99 discovered; domain, negative API paths, safe errors, reporting, rollback, concurrency and outbox recovery |
 | Embedded Kafka KRaft | ✅ Passed | Real consumed event, privacy checks and publication marker |
 | HTTP health, OpenAPI & Swagger | ✅ Passed | Running embedded HTTP server |
 | Standalone lifecycle smoke | ✅ Passed | Seven operations and reporting on test-only H2, port 18080 |

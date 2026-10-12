@@ -29,6 +29,7 @@ class TransactionIntegrationTest {
   @Autowired ClaimHistoryRepository history;
   @Autowired OutboxRepository outbox;
   @Autowired PlatformTransactionManager transactionManager;
+  @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
   @MockitoBean EventRecorder recorder;
 
   @BeforeEach
@@ -72,6 +73,24 @@ class TransactionIntegrationTest {
     assertThat(persisted.status()).isEqualTo(ClaimStatus.SUBMITTED);
     assertThat(persisted.assignedOfficerId()).isNull();
     assertThat(persisted.version()).isEqualTo(c.version());
+  }
+
+  @Test
+  void databaseActuallyRejectsDuplicateClaimNumber() {
+    var c = claims.create(input());
+    assertThatThrownBy(
+            () ->
+                jdbc.update(
+                    "INSERT INTO claims (id, claim_number, claim_type, market, claimant_name,"
+                        + " incident_description, incident_date, reported_at, updated_at, status,"
+                        + " estimated_liability, version) SELECT ?, claim_number, claim_type,"
+                        + " market, claimant_name, incident_description, incident_date,"
+                        + " reported_at, updated_at, status, estimated_liability, version FROM"
+                        + " claims WHERE id = ?",
+                    UUID.randomUUID(),
+                    c.id()))
+        .isInstanceOf(org.springframework.dao.DuplicateKeyException.class);
+    assertThat(repository.count()).isEqualTo(1);
   }
 
   @Test

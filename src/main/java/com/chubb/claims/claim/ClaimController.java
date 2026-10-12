@@ -49,7 +49,8 @@ public class ClaimController {
   @GetMapping
   public ClaimDtos.ClaimPage list(
       @RequestParam(required = false) ClaimStatus status,
-      @RequestParam(required = false) @Size(max = 100) String assignedOfficerId,
+      @RequestParam(required = false) @Size(min = 1, max = 100) @Pattern(regexp = ".*\\S.*")
+          String assignedOfficerId,
       @RequestParam(defaultValue = "false") boolean unassigned,
       @RequestParam(defaultValue = "0") @Min(0) int page,
       @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
