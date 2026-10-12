@@ -32,7 +32,7 @@ A small modular monolith replacing shared inboxes and spreadsheets with explicit
 | **Claims officers** | Pick up, review, request information, approve, settle or reject claims |
 | **Managers** | View team workload, decision counts, completion time and outstanding exposure |
 
-> **Validation snapshot:** badges reflect recorded local results, not live CI status. Java 17 and embedded Kafka checks passed; full Docker/PostgreSQL startup is blocked by local engine permissions. [See validation details.](#validation-record)
+> **Validation snapshot:** badges reflect recorded local results, not live CI status. Java 17 tests passed. The Podman stack now runs with PostgreSQL and Kafka; live checks found a separate workload endpoint failure. [See validation details.](#validation-record)
 
 ## Quick start
 
@@ -53,6 +53,33 @@ On Linux/macOS, replace the first command with `cp .env.example .env`.
 | **OpenAPI** | [View the API specification](http://localhost:8080/v3/api-docs) |
 
 Run the complete demo flow with `.\scripts\smoke.ps1`. [More startup options ↓](#run-the-complete-local-stack)
+
+## Reviewer flow in Swagger
+
+1. Start the project from its root. With Podman, run `podman machine start` if the machine is stopped, then `podman compose up --build -d`. Keep the existing `.env`; only copy `.env.example` on first setup and choose a password.
+2. Open **http://localhost:8080/swagger-ui/index.html**. The server should be **http://localhost:8080**, with no context path.
+3. Expand **POST /api/claims**, select **Try it out**, and execute this `application/json` request:
+
+```json
+{
+  "claimType": "MOTOR",
+  "market": "SG",
+  "claimantName": "Demo claimant",
+  "incidentDescription": "Collision at junction",
+  "incidentDate": "2026-10-01",
+  "estimatedLiability": 1000.00
+}
+```
+
+4. Expect **201**, `status: SUBMITTED`, and `version: 0`. Copy the returned **id** UUID and **claimNumber**; do not use the claim number in the UUID field.
+5. Paste `id` into **GET /api/claims/{id}**, **/{id}/status** or **/{id}/history**.
+6. Paste `claimNumber` into **GET /api/claims/by-number/{claimNumber}** for exact, case-sensitive full-detail lookup. An unknown number returns 404. The existing unique constraint supplies its index.
+7. Use **GET /api/claims** with optional `status`, `assignedOfficerId`, `unassigned`, `page` and `size`. Leave optional filters unset for all claims; supplied filters use AND. For incoming work use `status=SUBMITTED&unassigned=true&page=0&size=20`. Page starts at 0; size is 1–100.
+8. Continue with assignment, then review and the existing lifecycle commands. Supply the latest returned `version` as `expectedVersion`; after 409 refresh the claim before deciding whether to retry.
+
+Valid claim types: `MOTOR`, `PROPERTY`. Markets: `AU`, `NZ`, `SG`, `HK`, `MY`, `TH`. Dates use `yyyy-MM-dd`, cannot be in the future (UTC), and amounts are nonnegative USD with up to 17 integer digits and two decimal places. All six create fields are required.
+
+**If Swagger reports 404:** inspect its displayed **Request URL**. Creation is exactly `POST http://localhost:8080/api/claims` (no trailing slash or extra prefix). Refresh Swagger after rebuilding. Podman Compose may reuse an old container even after building; replace it with `podman compose up -d --force-recreate app`. For a completely uncached app build, use `podman compose build --no-cache app` first. These commands preserve the PostgreSQL volume. An invalid body returns 400; a 404 requires checking routing/deployment rather than changing claim validation.
 
 ## Stack
 
@@ -308,13 +335,15 @@ This is a local assessment with no authentication; production needs OAuth2/OIDC/
 | Clean build & executable JAR | ✅ Passed | Java 17 compilation, tests and packaging |
 | Default test suite | ✅ **98 passed, 1 skipped** | 99 discovered; domain, negative API paths, safe errors, reporting, rollback, concurrency and outbox recovery |
 | Embedded Kafka KRaft | ✅ Passed | Real consumed event, privacy checks and publication marker |
-| HTTP health, OpenAPI & Swagger | ✅ Passed | Running embedded HTTP server |
+| HTTP health, OpenAPI & Swagger | ✅ Passed | Embedded tests plus live Podman server; example and 201 response verified |
+| Live create / retrieval / search | ✅ Passed | PostgreSQL-backed POST 201; UUID, number, status, history and lists 200; unknown UUID/number 404; assignment advances version |
 | Standalone lifecycle smoke | ✅ Passed | Seven operations and reporting on test-only H2, port 18080 |
 | Compose configuration | ✅ Parsed | Configuration structure, not container startup |
-| PostgreSQL integration | ⏸ **1 skipped** | Explicit opt-in attempt blocked by Docker access |
-| Full Compose / image build | ⛔ Blocked | Docker engine named-pipe permission denied |
+| PostgreSQL integration test | ⏸ **1 skipped** | Opt-in Testcontainers test is not enabled by the default suite |
+| Podman stack / image build | ✅ Running | PostgreSQL and Kafka healthy; application health UP; live creation and lifecycle events verified |
+| Workload on PostgreSQL | ⚠ Failure found | `/api/workload` returns safe 500; separate from claim create/retrieval routing |
 
-`docker compose config --quiet` passed. `docker compose up --build -d` could not start because access to the Docker engine named pipe was denied. Explicitly enabling the PostgreSQL/Testcontainers test also failed because no usable Docker environment was available. **PostgreSQL runtime, container image build and publication to the Compose Kafka broker remain unverified.** A Compose configuration parse is not container startup validation. See `AI_WORKING_JOURNAL.md` for the full evidence and corrections.
+Earlier Docker startup and explicit Testcontainers attempts were blocked by engine access. On 2026-10-12 the Podman machine started, the image built successfully, and PostgreSQL/Kafka/application containers ran. A live demo claim settled and all seven outbox events were marked published after broker acknowledgement. This establishes local runtime evidence, not a passed PostgreSQL Testcontainers test or validation of every database query. `/api/workload` failed on PostgreSQL and remains a known issue outside the create/retrieval change. See `AI_WORKING_JOURNAL.md` for the evidence and limitations.
 
 ## Production evolution
 

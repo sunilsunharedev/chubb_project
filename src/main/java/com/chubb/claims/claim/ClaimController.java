@@ -36,6 +36,11 @@ public class ClaimController {
     return claims.get(id);
   }
 
+  @GetMapping("/by-number/{claimNumber}")
+  public ClaimDtos.Detail getByNumber(@PathVariable @Size(max = 40) String claimNumber) {
+    return claims.getByNumber(claimNumber);
+  }
+
   @GetMapping("/{id}/status")
   public ClaimDtos.StatusView status(@PathVariable UUID id) {
     return claims.status(id);

@@ -62,6 +62,12 @@ public class ClaimService {
   }
 
   @Transactional(readOnly = true)
+  public ClaimDtos.Detail getByNumber(String claimNumber) {
+    return ClaimDtos.Detail.from(
+        claims.findByClaimNumber(claimNumber).orElseThrow(ClaimNotFoundException::new));
+  }
+
+  @Transactional(readOnly = true)
   public ClaimDtos.StatusView status(UUID id) {
     Claim c = find(id);
     return new ClaimDtos.StatusView(c.getId(), c.getStatus(), c.getVersion(), c.getUpdatedAt());
